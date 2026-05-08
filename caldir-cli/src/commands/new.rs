@@ -191,7 +191,7 @@ fn expand_abbreviations(input: &str) -> String {
 /// Parse a date/time string into an EventTime.
 /// Tries ISO 8601 formats first (e.g. "2026-06-09T10:00"), then falls back
 /// to fuzzydate natural language parsing (e.g. "tomorrow 6pm").
-fn parse_datetime(input: &str) -> Result<EventTime> {
+pub(crate) fn parse_datetime(input: &str) -> Result<EventTime> {
     // Try ISO 8601 datetime first (YYYY-MM-DDTHH:MM)
     if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(input, "%Y-%m-%dT%H:%M") {
         let tzid = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
@@ -283,7 +283,7 @@ fn check_end_matches_start(start: &EventTime, end: &EventTime) -> Result<()> {
 }
 
 /// Apply a duration string to a start time.
-fn apply_duration(start: &EventTime, dur_input: &str) -> Result<EventTime> {
+pub(crate) fn apply_duration(start: &EventTime, dur_input: &str) -> Result<EventTime> {
     try_apply_duration(start, dur_input)
         .with_context(|| format!("Could not parse duration: \"{}\"", dur_input))
 }

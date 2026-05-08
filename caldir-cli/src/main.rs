@@ -162,6 +162,39 @@ enum Commands {
         #[arg(long)]
         no_reminders: bool,
     },
+    #[command(about = "Edit an existing event (search by title)")]
+    Edit {
+        /// Event title (substring search, case-insensitive). Omit to be prompted.
+        query: Option<String>,
+
+        /// New title
+        #[arg(short, long)]
+        summary: Option<String>,
+
+        /// New description (empty string clears it)
+        #[arg(long)]
+        description: Option<String>,
+
+        /// New start date/time (natural language, e.g. "tomorrow 6pm")
+        #[arg(short = 'S', long)]
+        start: Option<String>,
+
+        /// New end date/time
+        #[arg(short = 'E', long)]
+        end: Option<String>,
+
+        /// New duration (e.g. "30m", "2 hours")
+        #[arg(short, long)]
+        duration: Option<String>,
+
+        /// New location (empty string clears it)
+        #[arg(short, long)]
+        location: Option<String>,
+
+        /// Only search this calendar (by slug)
+        #[arg(short = 'C', long)]
+        calendar: Option<String>,
+    },
     #[command(about = "Discard unpushed local changes (restore to remote state)")]
     Discard {
         /// Only operate on this calendar (by slug)
@@ -325,6 +358,29 @@ async fn main() -> Result<()> {
                 calendar,
                 reminder,
                 no_reminders,
+                calendars,
+            )
+        }
+        Commands::Edit {
+            query,
+            summary,
+            description,
+            start,
+            end,
+            duration,
+            location,
+            calendar,
+        } => {
+            require_calendars()?;
+            let calendars = resolve_calendars(calendar.as_deref())?;
+            commands::edit::run(
+                query,
+                summary,
+                description,
+                start,
+                end,
+                duration,
+                location,
                 calendars,
             )
         }
