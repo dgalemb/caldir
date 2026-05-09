@@ -138,6 +138,16 @@ enum Commands {
         #[arg(long)]
         view: bool,
     },
+    #[command(about = "Show the next 30 days of events")]
+    Month {
+        /// Only show events from this calendar (by slug)
+        #[arg(short, long)]
+        calendar: Option<String>,
+
+        /// Render as a week-grid timeline instead of a flat list
+        #[arg(long)]
+        view: bool,
+    },
     #[command(about = "Create a new event in caldir")]
     New {
         /// Event title
@@ -330,6 +340,13 @@ async fn main() -> Result<()> {
                 .unwrap()
                 .with_timezone(&Utc);
             commands::events::run(calendars, Some(start_of_today()), Some(end_of_today), false)
+        }
+        Commands::Month { calendar, view } => {
+            require_calendars()?;
+            let calendars = resolve_calendars(calendar.as_deref())?;
+            let from = start_of_today();
+            let to = from + chrono::Duration::days(30);
+            commands::events::run(calendars, Some(from), Some(to), view)
         }
         Commands::Week { calendar, view } => {
             require_calendars()?;
