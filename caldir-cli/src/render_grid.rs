@@ -160,24 +160,18 @@ fn print_hour_row(hour: u32, timed: &[Vec<TimedSlot>], hour_col: usize, day_col:
         let cell = match starting.first() {
             None => pad("", day_col),
             Some(s) => {
-                let dur = format_dur(s.start, s.end);
+                let prefix = minute_prefix(s.start);
+                let suffix = duration_suffix(s.start, s.end);
                 let extra = if starting.len() > 1 {
                     format!(" +{}", starting.len() - 1)
                 } else {
                     String::new()
                 };
-                let dur_part = if dur.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {}", dur)
-                };
-                let suffix_w = dur_part.len() + extra.len();
-                let title_w = day_col
-                    .saturating_sub(2)
-                    .saturating_sub(suffix_w)
-                    .saturating_sub(1);
+                // " Title": leading "█ " is 2 chars; trailing space before suffix is 1
+                let chrome = 2 + prefix.chars().count() + suffix.chars().count() + extra.len();
+                let title_w = day_col.saturating_sub(chrome).saturating_sub(1);
                 let title = truncate_chars(&s.ge.event.summary, title_w);
-                let visible = format!("█ {}{}{}", title, dur_part, extra);
+                let visible = format!("█ {}{}{}{}", prefix, title, suffix, extra);
                 colorize_pad(&visible, s.ge.color, day_col)
             }
         };
@@ -257,23 +251,31 @@ fn colorize_pad(visible: &str, color: (u8, u8, u8), w: usize) -> String {
     padded.truecolor(r, g, b).to_string()
 }
 
-fn format_dur(start: NaiveDateTime, end: NaiveDateTime) -> String {
-    if start.date() != end.date() {
-        return format!("{:02}:{:02}+", start.hour(), start.minute());
+/// Tiny ":30 " prefix for events that start at non-zero minutes; empty otherwise.
+fn minute_prefix(start: NaiveDateTime) -> String {
+    if start.minute() == 0 {
+        String::new()
+    } else {
+        format!(":{:02} ", start.minute())
     }
-    let dur_min = (end - start).num_minutes();
-    if dur_min <= 60 && start.minute() == 0 && end.minute() == 0 {
+}
+
+/// Compact duration suffix: " 2h" for multi-hour blocks, " 30m" for sub-hour
+/// non-aligned events, " +" for events that cross midnight, empty for the
+/// common 1-hour-on-the-hour case.
+fn duration_suffix(start: NaiveDateTime, end: NaiveDateTime) -> String {
+    if start.date() != end.date() {
+        return " +".to_string();
+    }
+    let mins = (end - start).num_minutes().max(0);
+    if mins <= 60 {
         return String::new();
     }
-    if start.minute() == 0 && end.minute() == 0 {
-        format!("{:02}-{:02}", start.hour(), end.hour())
+    let hours = mins / 60;
+    let leftover = mins % 60;
+    if leftover == 0 {
+        format!(" {}h", hours)
     } else {
-        format!(
-            "{:02}:{:02}-{:02}:{:02}",
-            start.hour(),
-            start.minute(),
-            end.hour(),
-            end.minute()
-        )
+        format!(" {}h{}", hours, leftover)
     }
 }
