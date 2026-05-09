@@ -49,11 +49,17 @@ pub fn render(events: &[GridEvent], from: NaiveDate, to: NaiveDate) {
 
     let mut week = monday_of(from);
     let mut first = true;
+    let mut last_label: Option<String> = None;
     while week <= to {
         if !first {
             println!();
         }
         first = false;
+        let label = month_label(week, week + Duration::days(6));
+        if last_label.as_ref() != Some(&label) {
+            println!("{}", label.bold());
+            last_label = Some(label);
+        }
         render_week(events, week, hour_col, day_col);
         week += Duration::days(7);
     }
@@ -92,7 +98,6 @@ fn render_week(events: &[GridEvent], week_start: NaiveDate, hour_col: usize, day
         }
     }
 
-    print_month_label(week_start, week_end);
     print_header(week_start, hour_col, day_col);
 
     if all_day.iter().any(|v| !v.is_empty()) {
@@ -111,13 +116,12 @@ fn render_week(events: &[GridEvent], week_start: NaiveDate, hour_col: usize, day
     }
 }
 
-fn print_month_label(start: NaiveDate, end: NaiveDate) {
-    let label = if start.month() == end.month() {
+fn month_label(start: NaiveDate, end: NaiveDate) -> String {
+    if start.month() == end.month() {
         start.format("%B %Y").to_string()
     } else {
         format!("{} – {}", start.format("%b"), end.format("%b %Y"))
-    };
-    println!("{}", label.bold());
+    }
 }
 
 fn print_header(week_start: NaiveDate, hour_col: usize, day_col: usize) {
