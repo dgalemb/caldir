@@ -45,7 +45,7 @@ pub fn render(events: &[GridEvent], from: NaiveDate, to: NaiveDate) {
         .unwrap_or(100);
 
     let hour_col = 4;
-    let day_col = ((term_width.saturating_sub(hour_col)) / 7).clamp(8, 22);
+    let day_col = ((term_width.saturating_sub(hour_col)) / 7).max(8);
 
     let mut week = monday_of(from);
     let mut first = true;
@@ -158,30 +158,132 @@ fn print_all_day(all_day: &[Vec<&GridEvent>], hour_col: usize, day_col: usize) {
 }
 
 fn print_hour_row(hour: u32, timed: &[Vec<TimedSlot>], hour_col: usize, day_col: usize) {
-    let mut row = format!("{:>w$} ", format!("{:02}", hour), w = hour_col - 1);
-    for slots in timed.iter().take(7) {
-        let starting: Vec<&TimedSlot> = slots.iter().filter(|s| s.start.hour() == hour).collect();
-        let cell = match starting.first() {
-            None => pad("", day_col),
-            Some(s) => {
-                let prefix = minute_prefix(s.start);
-                let suffix = duration_suffix(s.start, s.end);
-                let extra = if starting.len() > 1 {
-                    format!(" +{}", starting.len() - 1)
-                } else {
-                    String::new()
-                };
-                // " Title": leading "█ " is 2 chars; trailing space before suffix is 1
-                let chrome = 2 + prefix.chars().count() + suffix.chars().count() + extra.len();
-                let title_w = day_col.saturating_sub(chrome).saturating_sub(1);
-                let title = truncate_chars(&s.ge.event.summary, title_w);
-                let visible = format!("█ {}{}{}{}", prefix, title, suffix, extra);
-                colorize_pad(&visible, s.ge.color, day_col)
+    let cells: Vec<Cell> = (0..7)
+        .map(|i| {
+            let starting: Vec<&TimedSlot> = timed[i]
+                .iter()
+                .filter(|s| s.start.hour() == hour)
+                .collect();
+            match starting.first() {
+                None => Cell::empty(),
+                Some(s) => Cell::for_slot(s, starting.len() - 1, day_col),
             }
-        };
-        row.push_str(&cell);
+        })
+        .collect();
+
+    let any_wrap = cells.iter().any(|c| c.line2.is_some());
+
+    let mut row1 = format!("{:>w$} ", format!("{:02}", hour), w = hour_col - 1);
+    for c in &cells {
+        row1.push_str(&c.render(&c.line1, day_col));
     }
-    println!("{}", row);
+    println!("{}", row1);
+
+    if any_wrap {
+        let mut row2 = " ".repeat(hour_col);
+        for c in &cells {
+            let text = c.line2.as_deref().unwrap_or("");
+            row2.push_str(&c.render(text, day_col));
+        }
+        println!("{}", row2);
+    }
+}
+
+struct Cell {
+    line1: String,
+    line2: Option<String>,
+    color: Option<(u8, u8, u8)>,
+}
+
+impl Cell {
+    fn empty() -> Self {
+        Self {
+            line1: String::new(),
+            line2: None,
+            color: None,
+        }
+    }
+
+    fn for_slot(s: &TimedSlot, extras: usize, day_col: usize) -> Self {
+        let prefix = minute_prefix(s.start);
+        let suffix = duration_suffix(s.start, s.end);
+        let extra = if extras > 0 {
+            format!(" +{}", extras)
+        } else {
+            String::new()
+        };
+
+        // Single-line layout: "█ {prefix}{title}{suffix}{extra}", with 1 char trailing
+        // space reserved between cells.
+        let chrome_inline =
+            2 + prefix.chars().count() + suffix.chars().count() + extra.chars().count();
+        let title_w_inline = day_col.saturating_sub(chrome_inline).saturating_sub(1);
+
+        let title = &s.ge.event.summary;
+        let title_chars = title.chars().count();
+
+        if title_chars <= title_w_inline {
+            return Self {
+                line1: format!("█ {}{}{}{}", prefix, title, suffix, extra),
+                line2: None,
+                color: Some(s.ge.color),
+            };
+        }
+
+        // Wrap: line 1 carries `█ {prefix}{part1}`, line 2 carries `  {part2}{suffix}{extra}`.
+        let line1_title_w = day_col.saturating_sub(2 + prefix.chars().count()).saturating_sub(1);
+        let line2_title_w = day_col
+            .saturating_sub(2 + suffix.chars().count() + extra.chars().count())
+            .saturating_sub(1);
+
+        if line1_title_w == 0 || line2_title_w == 0 {
+            // Cell too narrow to wrap usefully; truncate.
+            let truncated = truncate_chars(title, title_w_inline);
+            return Self {
+                line1: format!("█ {}{}{}{}", prefix, truncated, suffix, extra),
+                line2: None,
+                color: Some(s.ge.color),
+            };
+        }
+
+        let (part1, part2) = split_title(title, line1_title_w);
+        let part2_truncated = truncate_chars(&part2, line2_title_w);
+        Self {
+            line1: format!("█ {}{}", prefix, part1),
+            line2: Some(format!("  {}{}{}", part2_truncated, suffix, extra)),
+            color: Some(s.ge.color),
+        }
+    }
+
+    fn render(&self, text: &str, day_col: usize) -> String {
+        match self.color {
+            Some(c) => colorize_pad(text, c, day_col),
+            None => pad(text, day_col),
+        }
+    }
+}
+
+/// Split `title` so the first part fits in `line1_max` chars. Prefers a
+/// space boundary; falls back to a hard break if no space exists.
+fn split_title(title: &str, line1_max: usize) -> (String, String) {
+    let chars: Vec<char> = title.chars().collect();
+    if chars.len() <= line1_max {
+        return (title.to_string(), String::new());
+    }
+
+    let break_at = (1..=line1_max).rev().find(|&i| chars[i - 1] == ' ');
+    match break_at {
+        Some(i) => {
+            let p1: String = chars[..i].iter().collect::<String>().trim_end().to_string();
+            let p2: String = chars[i..].iter().collect::<String>().trim_start().to_string();
+            (p1, p2)
+        }
+        None => {
+            let p1: String = chars[..line1_max].iter().collect();
+            let p2: String = chars[line1_max..].iter().collect();
+            (p1, p2)
+        }
+    }
 }
 
 struct TimedSlot<'a> {
