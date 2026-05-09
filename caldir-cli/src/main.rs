@@ -1,5 +1,6 @@
 mod commands;
 mod render;
+mod render_grid;
 mod utils;
 
 use anyhow::Result;
@@ -116,6 +117,10 @@ enum Commands {
         /// Show events until this date (YYYY-MM-DD)
         #[arg(long)]
         to: Option<String>,
+
+        /// Render as a week-grid timeline instead of a flat list
+        #[arg(long)]
+        view: bool,
     },
     #[command(about = "Show today's events")]
     Today {
@@ -128,6 +133,10 @@ enum Commands {
         /// Only show events from this calendar (by slug)
         #[arg(short, long)]
         calendar: Option<String>,
+
+        /// Render as a week-grid timeline instead of a flat list
+        #[arg(long)]
+        view: bool,
     },
     #[command(about = "Create a new event in caldir")]
     New {
@@ -288,7 +297,12 @@ async fn main() -> Result<()> {
                 .map_err(|e| anyhow::anyhow!(e))?;
             commands::sync::run(calendars, range, verbose, force).await
         }
-        Commands::Events { calendar, from, to } => {
+        Commands::Events {
+            calendar,
+            from,
+            to,
+            view,
+        } => {
             require_calendars()?;
             let calendars = resolve_calendars(calendar.as_deref())?;
             use caldir_core::date_range::{parse_date_end, parse_date_start};
@@ -303,7 +317,7 @@ async fn main() -> Result<()> {
                 .map(parse_date_end)
                 .transpose()
                 .map_err(|e| anyhow::anyhow!(e))?;
-            commands::events::run(calendars, from_dt, to_dt)
+            commands::events::run(calendars, from_dt, to_dt, view)
         }
         Commands::Today { calendar } => {
             require_calendars()?;
@@ -315,9 +329,9 @@ async fn main() -> Result<()> {
                 .and_local_timezone(Local)
                 .unwrap()
                 .with_timezone(&Utc);
-            commands::events::run(calendars, Some(start_of_today()), Some(end_of_today))
+            commands::events::run(calendars, Some(start_of_today()), Some(end_of_today), false)
         }
-        Commands::Week { calendar } => {
+        Commands::Week { calendar, view } => {
             require_calendars()?;
             let calendars = resolve_calendars(calendar.as_deref())?;
             let today = Local::now().date_naive();
@@ -335,7 +349,12 @@ async fn main() -> Result<()> {
                 .and_local_timezone(Local)
                 .unwrap()
                 .with_timezone(&Utc);
-            commands::events::run(calendars, Some(start_of_today()), Some(end_of_sunday))
+            commands::events::run(
+                calendars,
+                Some(start_of_today()),
+                Some(end_of_sunday),
+                view,
+            )
         }
         Commands::New {
             title,
